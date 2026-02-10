@@ -1,0 +1,462 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+  <title>子役カウンター</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, "Helvetica Neue", Arial, "Noto Sans JP", sans-serif; margin: 16px; }
+    h1 { font-size: 20px; margin: 0 0 12px; }
+    .card { border: 1px solid #ddd; border-radius: 12px; padding: 12px; margin-bottom: 12px; }
+    .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+    .row > * { margin: 2px 0; }
+    .label { font-weight: 600; }
+    input[type="number"], input[type="text"] { padding: 8px; border: 1px solid #ccc; border-radius: 10px; font-size: 16px; }
+    input[type="number"] { width: 150px; }
+    input[type="text"] { width: 140px; }
+    button { padding: 10px 12px; border: 1px solid #ccc; border-radius: 10px; background: #f7f7f7; font-size: 16px; }
+    button:active { transform: scale(0.99); }
+    .counter { display: grid; grid-template-columns: 1fr auto; gap: 8px; align-items: center; }
+    .counter-name { font-weight: 700; }
+    .counter-controls { display: flex; gap: 6px; align-items: center; justify-content: flex-end; }
+    .pill { padding: 6px 10px; border: 1px solid #ddd; border-radius: 999px; min-width: 80px; text-align: center; }
+    .small { font-size: 13px; color: #555; }
+    .history-item { border-top: 1px solid #eee; padding: 10px 0; }
+    .history-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 6px; }
+    .rates-grid { display: grid; grid-template-columns: repeat(2, minmax(140px, 1fr)); gap: 8px; margin-top: 8px; }
+  </style>
+</head>
+<body>
+  <h1>子役カウンター（iPhone向け）</h1>
+
+  <div class="card">
+    <div class="label">ゲーム数（差分）</div>
+
+    <div class="row">
+      <div>
+        <div class="small">スタートG（startGames = 開始ゲーム数）</div>
+        <input id="startGamesInput" type="number" inputmode="numeric" min="0" value="0" />
+      </div>
+
+      <div>
+        <div class="small">現在G（nowGames = 現在のゲーム数）</div>
+        <input id="nowGamesInput" type="number" inputmode="numeric" min="0" value="0" />
+      </div>
+    </div>
+
+    <div class="row">
+      <button data-now-delta="-10">現在G -10</button>
+      <button data-now-delta="-1">現在G -1</button>
+      <button data-now-delta="1">現在G +1</button>
+      <button data-now-delta="10">現在G +10</button>
+      <button id="resetCurrentBtn">カウントだけリセット</button>
+    </div>
+
+    <div class="row">
+      <div class="pill">差分G: <span id="diffGames">0</span></div>
+    </div>
+
+    <div class="small">
+      差分G = 現在G - スタートG（0未満は0扱い）<br/>
+      ※途中から打つときは、スタートGと現在Gをその時点の表示に合わせればOK
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="label">ボーナス（bonus = ボーナス）</div>
+    <div id="bonusCounters"></div>
+    <div class="small">※-1は0で止まります</div>
+  </div>
+
+  <div class="card">
+    <div class="label">可変役名（custom roles = 変更できる役名）</div>
+    <div class="row">
+      <div>
+        <div class="small">役4</div>
+        <input id="customName0" type="text" value="弱チェ" />
+      </div>
+      <div>
+        <div class="small">役5</div>
+        <input id="customName1" type="text" value="強チェ" />
+      </div>
+      <div>
+        <div class="small">役6</div>
+        <input id="customName2" type="text" value="チャンス目" />
+      </div>
+    </div>
+    <div class="small">※名前を変えると下の表示も即時で変わります（中身のキーは固定）</div>
+  </div>
+
+  <div class="card">
+    <div class="label">子役カウント（koyaku counts = 子役回数）</div>
+    <div id="koyakuCounters"></div>
+    <div class="small">※-1は0で止まります</div>
+  </div>
+
+  <div class="card">
+    <div class="label">自動計算</div>
+
+    <div class="row">
+      <div class="pill">BB: <span id="bbCount">0</span></div>
+      <div class="pill">RB: <span id="rbCount">0</span></div>
+      <div class="pill">BB+RB: <span id="bonusTotal">0</span></div>
+    </div>
+
+    <div class="rates-grid">
+      <div class="pill">合算(BB+RB): <span id="bonusGassan">-</span></div>
+      <div class="pill">BB: <span id="bbRate">-</span></div>
+      <div class="pill">RB: <span id="rbRate">-</span></div>
+      <div class="pill">子役合計: <span id="totalKoyaku">0</span></div>
+    </div>
+
+    <div class="small" id="koyakuRatesLine" style="margin-top:8px;"></div>
+  </div>
+
+  <div class="card">
+    <div class="label">保存 / 履歴</div>
+    <div class="row">
+      <button id="saveBtn">保存</button>
+      <button id="clearHistoryBtn">履歴を全削除</button>
+    </div>
+    <div class="small">保存先：localStorage（ブラウザ内）。ネット不要。</div>
+    <div id="history"></div>
+  </div>
+
+  <script>
+    // cur = current（現在の）
+    // start = 開始
+    // now = 現在
+    // games = ゲーム数
+    // diff = 差分
+
+    const FIXED_ROLES = [
+      { key: "bell", label: "ベル" },
+      { key: "cherry", label: "チェリー" },
+      { key: "suika", label: "スイカ" },
+    ];
+
+    let customRoles = [
+      { key: "custom_0", label: "弱チェ" },
+      { key: "custom_1", label: "強チェ" },
+      { key: "custom_2", label: "チャンス目" },
+    ];
+
+    const BONUS_ROLES = [
+      { key: "bb", label: "BB（ビッグ）" },
+      { key: "rb", label: "RB（レギュラー）" },
+    ];
+
+    // ここが変更点：回転数は「差分」計算にする
+    let startGames = 0; // start games（開始ゲーム数）
+    let nowGames = 0;   // now games（現在ゲーム数）
+
+    let curCounts = {}; // 子役 + BB/RB のカウント
+    let history = [];
+
+    const STORAGE_KEY = "koyaku_counter_history_v3_diff_games";
+
+    const $startGamesInput = document.getElementById("startGamesInput");
+    const $nowGamesInput = document.getElementById("nowGamesInput");
+    const $diffGames = document.getElementById("diffGames");
+
+    const $bonusCounters = document.getElementById("bonusCounters");
+    const $koyakuCounters = document.getElementById("koyakuCounters");
+
+    const $bbCount = document.getElementById("bbCount");
+    const $rbCount = document.getElementById("rbCount");
+    const $bonusTotal = document.getElementById("bonusTotal");
+
+    const $bonusGassan = document.getElementById("bonusGassan");
+    const $bbRate = document.getElementById("bbRate");
+    const $rbRate = document.getElementById("rbRate");
+
+    const $totalKoyaku = document.getElementById("totalKoyaku");
+    const $koyakuRatesLine = document.getElementById("koyakuRatesLine");
+    const $history = document.getElementById("history");
+
+    function clampNonNegative(n) {
+      return Math.max(0, n);
+    }
+
+    function getDiffGames() {
+      // 差分G = now - start（0未満は0）
+      return clampNonNegative(nowGames - startGames);
+    }
+
+    function loadHistory() {
+      try {
+        const raw = localStorage.getItem(STORAGE_KEY);
+        if (!raw) return [];
+        const parsed = JSON.parse(raw);
+        if (!Array.isArray(parsed)) return [];
+        return parsed;
+      } catch {
+        return [];
+      }
+    }
+
+    function saveHistory() {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(history));
+    }
+
+    function getAllKoyakuRoles() {
+      return [...FIXED_ROLES, ...customRoles];
+    }
+
+    function initCountsIfNeeded() {
+      for (const r of getAllKoyakuRoles()) {
+        if (typeof curCounts[r.key] !== "number") curCounts[r.key] = 0;
+      }
+      for (const b of BONUS_ROLES) {
+        if (typeof curCounts[b.key] !== "number") curCounts[b.key] = 0;
+      }
+    }
+
+    function renderCounterList(containerEl, roles) {
+      initCountsIfNeeded();
+      containerEl.innerHTML = "";
+
+      for (const role of roles) {
+        const wrap = document.createElement("div");
+        wrap.className = "counter";
+
+        const left = document.createElement("div");
+        left.className = "counter-name";
+        left.textContent = role.label;
+
+        const right = document.createElement("div");
+        right.className = "counter-controls";
+
+        const minusBtn = document.createElement("button");
+        minusBtn.textContent = "-1";
+        minusBtn.addEventListener("click", () => {
+          curCounts[role.key] = clampNonNegative(curCounts[role.key] - 1);
+          updateView();
+        });
+
+        const countPill = document.createElement("div");
+        countPill.className = "pill";
+        countPill.textContent = curCounts[role.key];
+
+        const plusBtn = document.createElement("button");
+        plusBtn.textContent = "+1";
+        plusBtn.addEventListener("click", () => {
+          curCounts[role.key] = curCounts[role.key] + 1;
+          updateView();
+        });
+
+        right.appendChild(minusBtn);
+        right.appendChild(countPill);
+        right.appendChild(plusBtn);
+
+        wrap.appendChild(left);
+        wrap.appendChild(right);
+        containerEl.appendChild(wrap);
+      }
+    }
+
+    function formatRate1OverX(count, games) {
+      if (games <= 0 || count <= 0) return "-";
+      const x = games / count;
+      return "1/" + x.toFixed(1);
+    }
+
+    function updateCalculations() {
+      initCountsIfNeeded();
+
+      const diffGames = getDiffGames();
+      $diffGames.textContent = String(diffGames);
+
+      const bb = curCounts.bb;
+      const rb = curCounts.rb;
+      const bonusTotal = bb + rb;
+
+      $bbCount.textContent = String(bb);
+      $rbCount.textContent = String(rb);
+      $bonusTotal.textContent = String(bonusTotal);
+
+      $bonusGassan.textContent = formatRate1OverX(bonusTotal, diffGames);
+      $bbRate.textContent = formatRate1OverX(bb, diffGames);
+      $rbRate.textContent = formatRate1OverX(rb, diffGames);
+
+      let koyakuTotal = 0;
+      const koyakuRoles = getAllKoyakuRoles();
+      for (const r of koyakuRoles) koyakuTotal += curCounts[r.key];
+      $totalKoyaku.textContent = String(koyakuTotal);
+
+      const lines = koyakuRoles.map(r => {
+        const rate = formatRate1OverX(curCounts[r.key], diffGames);
+        return `${r.label}: ${rate}（${curCounts[r.key]}回）`;
+      });
+      $koyakuRatesLine.textContent = lines.join(" / ");
+    }
+
+    function updateView() {
+      $startGamesInput.value = String(startGames);
+      $nowGamesInput.value = String(nowGames);
+
+      renderCounterList($bonusCounters, BONUS_ROLES);
+      renderCounterList($koyakuCounters, getAllKoyakuRoles());
+
+      updateCalculations();
+      renderHistory();
+    }
+
+    function renderHistory() {
+      $history.innerHTML = "";
+      if (history.length === 0) {
+        $history.innerHTML = `<div class="small">履歴はまだありません</div>`;
+        return;
+      }
+
+      const reversed = [...history].reverse();
+      for (const item of reversed) {
+        const div = document.createElement("div");
+        div.className = "history-item";
+
+        const title = document.createElement("div");
+        title.innerHTML =
+          `<strong>${item.savedAt}</strong>` +
+          ` / start=${item.startGames}, now=${item.nowGames}, diff=${item.diffGames}` +
+          ` / 合算(BB+RB)=${item.bonusGassan}` +
+          ` / BB=${item.bbRate}` +
+          ` / RB=${item.rbRate}`;
+
+        const line1 = document.createElement("div");
+        line1.className = "small";
+        line1.textContent = `BB=${item.counts.bb}, RB=${item.counts.rb}, BB+RB=${item.bonusTotal}`;
+
+        const line2 = document.createElement("div");
+        line2.className = "small";
+        line2.textContent = item.koyakuSummaries.join(" / ");
+
+        const actions = document.createElement("div");
+        actions.className = "history-actions";
+
+        const loadBtn = document.createElement("button");
+        loadBtn.textContent = "読み込み";
+        loadBtn.addEventListener("click", () => {
+          startGames = item.startGames;
+          nowGames = item.nowGames;
+          customRoles = item.customRoles.map(r => ({ ...r }));
+          curCounts = { ...item.counts };
+
+          document.getElementById("customName0").value = customRoles[0].label;
+          document.getElementById("customName1").value = customRoles[1].label;
+          document.getElementById("customName2").value = customRoles[2].label;
+
+          updateView();
+        });
+
+        const delBtn = document.createElement("button");
+        delBtn.textContent = "この履歴を削除";
+        delBtn.addEventListener("click", () => {
+          const idx = history.findIndex(h => h.id === item.id);
+          if (idx >= 0) history.splice(idx, 1);
+          saveHistory();
+          updateView();
+        });
+
+        actions.appendChild(loadBtn);
+        actions.appendChild(delBtn);
+
+        div.appendChild(title);
+        div.appendChild(line1);
+        div.appendChild(line2);
+        div.appendChild(actions);
+        $history.appendChild(div);
+      }
+    }
+
+    // 現在Gのボタン増減
+    document.querySelectorAll("[data-now-delta]").forEach(btn => {
+      btn.addEventListener("click", () => {
+        const delta = Number(btn.getAttribute("data-now-delta"));
+        nowGames = clampNonNegative(nowGames + delta);
+        updateView();
+      });
+    });
+
+    // 直接入力
+    $startGamesInput.addEventListener("input", () => {
+      const v = Number($startGamesInput.value);
+      startGames = clampNonNegative(Number.isFinite(v) ? v : 0);
+      updateView();
+    });
+
+    $nowGamesInput.addEventListener("input", () => {
+      const v = Number($nowGamesInput.value);
+      nowGames = clampNonNegative(Number.isFinite(v) ? v : 0);
+      updateView();
+    });
+
+    // カウントだけリセット（start/nowは残す）
+    document.getElementById("resetCurrentBtn").addEventListener("click", () => {
+      curCounts = {};
+      initCountsIfNeeded();
+      updateView();
+    });
+
+    // 可変役名：直接編集（A方式）
+    function bindCustomNameInput(inputId, idx) {
+      const el = document.getElementById(inputId);
+      el.addEventListener("input", () => {
+        const v = el.value.trim();
+        customRoles[idx].label = v.length > 0 ? v : `役${idx + 4}`;
+        updateView();
+      });
+    }
+    bindCustomNameInput("customName0", 0);
+    bindCustomNameInput("customName1", 1);
+    bindCustomNameInput("customName2", 2);
+
+    // 保存 / 履歴
+    document.getElementById("saveBtn").addEventListener("click", () => {
+      initCountsIfNeeded();
+
+      const koyakuRoles = getAllKoyakuRoles();
+      const koyakuSummaries = koyakuRoles.map(r => `${r.label}:${curCounts[r.key]}`);
+
+      const bb = curCounts.bb;
+      const rb = curCounts.rb;
+      const bonusTotal = bb + rb;
+
+      const diffGames = getDiffGames();
+
+      const item = {
+        id: crypto.randomUUID(),
+        savedAt: new Date().toLocaleString(),
+
+        startGames,
+        nowGames,
+        diffGames,
+
+        counts: { ...curCounts },
+        customRoles: customRoles.map(r => ({ ...r })),
+
+        bonusTotal,
+        bonusGassan: formatRate1OverX(bonusTotal, diffGames),
+        bbRate: formatRate1OverX(bb, diffGames),
+        rbRate: formatRate1OverX(rb, diffGames),
+
+        koyakuSummaries,
+      };
+
+      history.push(item);
+      saveHistory();
+      updateView();
+    });
+
+    document.getElementById("clearHistoryBtn").addEventListener("click", () => {
+      history = [];
+      saveHistory();
+      updateView();
+    });
+
+    // 起動時
+    history = loadHistory();
+    initCountsIfNeeded();
+    updateView();
+  </script>
+</body>
+</html>
