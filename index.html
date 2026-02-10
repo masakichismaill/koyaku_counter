@@ -69,22 +69,34 @@
   </div>
 
   <div class="card">
-    <div class="label">可変役名（custom roles = 変更できる役名）</div>
+    <div class="label">子役名（6種類すべて変更可能）</div>
     <div class="row">
       <div>
+        <div class="small">役1</div>
+        <input id="koyakuName0" type="text" value="ベル" />
+      </div>
+      <div>
+        <div class="small">役2</div>
+        <input id="koyakuName1" type="text" value="チェリー" />
+      </div>
+      <div>
+        <div class="small">役3</div>
+        <input id="koyakuName2" type="text" value="スイカ" />
+      </div>
+      <div>
         <div class="small">役4</div>
-        <input id="customName0" type="text" value="弱チェ" />
+        <input id="koyakuName3" type="text" value="弱チェ" />
       </div>
       <div>
         <div class="small">役5</div>
-        <input id="customName1" type="text" value="強チェ" />
+        <input id="koyakuName4" type="text" value="強チェ" />
       </div>
       <div>
         <div class="small">役6</div>
-        <input id="customName2" type="text" value="チャンス目" />
+        <input id="koyakuName5" type="text" value="チャンス目" />
       </div>
     </div>
-    <div class="small">※名前を変えると下の表示も即時で変わります（中身のキーは固定）</div>
+    <div class="small">※名前を変えると下の子役カウンター表示も即時で変わります</div>
   </div>
 
   <div class="card">
@@ -123,22 +135,17 @@
   </div>
 
   <script>
-    // cur = current（現在の）
-    // start = 開始
-    // now = 現在
-    // games = ゲーム数
-    // diff = 差分
+    // start = 開始, now = 現在, diff = 差分
+    // role = 役, label = 表示名, key = 内部ID（固定）
 
-    const FIXED_ROLES = [
-      { key: "bell", label: "ベル" },
-      { key: "cherry", label: "チェリー" },
-      { key: "suika", label: "スイカ" },
-    ];
-
-    let customRoles = [
-      { key: "custom_0", label: "弱チェ" },
-      { key: "custom_1", label: "強チェ" },
-      { key: "custom_2", label: "チャンス目" },
+    // 子役（6種類ぜんぶ可変）
+    let koyakuRoles = [
+      { key: "role_0", label: "ベル" },
+      { key: "role_1", label: "チェリー" },
+      { key: "role_2", label: "スイカ" },
+      { key: "role_3", label: "弱チェ" },
+      { key: "role_4", label: "強チェ" },
+      { key: "role_5", label: "チャンス目" },
     ];
 
     const BONUS_ROLES = [
@@ -146,15 +153,18 @@
       { key: "rb", label: "RB（レギュラー）" },
     ];
 
-    // ここが変更点：回転数は「差分」計算にする
-    let startGames = 0; // start games（開始ゲーム数）
-    let nowGames = 0;   // now games（現在ゲーム数）
+    // ゲーム数（差分方式）
+    let startGames = 0; // 開始G
+    let nowGames = 0;   // 現在G
 
-    let curCounts = {}; // 子役 + BB/RB のカウント
+    // カウント（子役 + BB/RB）
+    let curCounts = {};
     let history = [];
 
-    const STORAGE_KEY = "koyaku_counter_history_v3_diff_games";
+    // v4: 子役6可変 + 差分G + BB/RB
+    const STORAGE_KEY = "koyaku_counter_history_v4";
 
+    // DOM
     const $startGamesInput = document.getElementById("startGamesInput");
     const $nowGamesInput = document.getElementById("nowGamesInput");
     const $diffGames = document.getElementById("diffGames");
@@ -174,37 +184,25 @@
     const $koyakuRatesLine = document.getElementById("koyakuRatesLine");
     const $history = document.getElementById("history");
 
-    function clampNonNegative(n) {
-      return Math.max(0, n);
-    }
-
-    function getDiffGames() {
-      // 差分G = now - start（0未満は0）
-      return clampNonNegative(nowGames - startGames);
-    }
+    function clampNonNegative(n) { return Math.max(0, n); }
+    function getDiffGames() { return clampNonNegative(nowGames - startGames); }
 
     function loadHistory() {
       try {
         const raw = localStorage.getItem(STORAGE_KEY);
         if (!raw) return [];
         const parsed = JSON.parse(raw);
-        if (!Array.isArray(parsed)) return [];
-        return parsed;
+        return Array.isArray(parsed) ? parsed : [];
       } catch {
         return [];
       }
     }
-
     function saveHistory() {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(history));
     }
 
-    function getAllKoyakuRoles() {
-      return [...FIXED_ROLES, ...customRoles];
-    }
-
     function initCountsIfNeeded() {
-      for (const r of getAllKoyakuRoles()) {
+      for (const r of koyakuRoles) {
         if (typeof curCounts[r.key] !== "number") curCounts[r.key] = 0;
       }
       for (const b of BONUS_ROLES) {
@@ -257,16 +255,15 @@
 
     function formatRate1OverX(count, games) {
       if (games <= 0 || count <= 0) return "-";
-      const x = games / count;
-      return "1/" + x.toFixed(1);
+      return "1/" + (games / count).toFixed(1);
     }
 
     function updateCalculations() {
       initCountsIfNeeded();
-
       const diffGames = getDiffGames();
       $diffGames.textContent = String(diffGames);
 
+      // ボーナス
       const bb = curCounts.bb;
       const rb = curCounts.rb;
       const bonusTotal = bb + rb;
@@ -279,27 +276,14 @@
       $bbRate.textContent = formatRate1OverX(bb, diffGames);
       $rbRate.textContent = formatRate1OverX(rb, diffGames);
 
+      // 子役合計
       let koyakuTotal = 0;
-      const koyakuRoles = getAllKoyakuRoles();
       for (const r of koyakuRoles) koyakuTotal += curCounts[r.key];
       $totalKoyaku.textContent = String(koyakuTotal);
 
-      const lines = koyakuRoles.map(r => {
-        const rate = formatRate1OverX(curCounts[r.key], diffGames);
-        return `${r.label}: ${rate}（${curCounts[r.key]}回）`;
-      });
+      // 子役の各役の出現率（1行）
+      const lines = koyakuRoles.map(r => `${r.label}: ${formatRate1OverX(curCounts[r.key], diffGames)}（${curCounts[r.key]}回）`);
       $koyakuRatesLine.textContent = lines.join(" / ");
-    }
-
-    function updateView() {
-      $startGamesInput.value = String(startGames);
-      $nowGamesInput.value = String(nowGames);
-
-      renderCounterList($bonusCounters, BONUS_ROLES);
-      renderCounterList($koyakuCounters, getAllKoyakuRoles());
-
-      updateCalculations();
-      renderHistory();
     }
 
     function renderHistory() {
@@ -338,12 +322,15 @@
         loadBtn.addEventListener("click", () => {
           startGames = item.startGames;
           nowGames = item.nowGames;
-          customRoles = item.customRoles.map(r => ({ ...r }));
           curCounts = { ...item.counts };
 
-          document.getElementById("customName0").value = customRoles[0].label;
-          document.getElementById("customName1").value = customRoles[1].label;
-          document.getElementById("customName2").value = customRoles[2].label;
+          // 子役名（表示名）も復元
+          koyakuRoles = item.koyakuRoles.map(r => ({ ...r }));
+
+          // 入力欄にも反映
+          for (let i = 0; i < 6; i++) {
+            document.getElementById(`koyakuName${i}`).value = koyakuRoles[i].label;
+          }
 
           updateView();
         });
@@ -368,60 +355,65 @@
       }
     }
 
-    // 現在Gのボタン増減
+    function updateView() {
+      $startGamesInput.value = String(startGames);
+      $nowGamesInput.value = String(nowGames);
+
+      renderCounterList($bonusCounters, BONUS_ROLES);
+      renderCounterList($koyakuCounters, koyakuRoles);
+
+      updateCalculations();
+      renderHistory();
+    }
+
+    // --- イベント：現在Gボタン ---
     document.querySelectorAll("[data-now-delta]").forEach(btn => {
       btn.addEventListener("click", () => {
-        const delta = Number(btn.getAttribute("data-now-delta"));
-        nowGames = clampNonNegative(nowGames + delta);
+        nowGames = clampNonNegative(nowGames + Number(btn.getAttribute("data-now-delta")));
         updateView();
       });
     });
 
-    // 直接入力
+    // --- イベント：Gの直接入力 ---
     $startGamesInput.addEventListener("input", () => {
       const v = Number($startGamesInput.value);
       startGames = clampNonNegative(Number.isFinite(v) ? v : 0);
       updateView();
     });
-
     $nowGamesInput.addEventListener("input", () => {
       const v = Number($nowGamesInput.value);
       nowGames = clampNonNegative(Number.isFinite(v) ? v : 0);
       updateView();
     });
 
-    // カウントだけリセット（start/nowは残す）
+    // --- カウントだけリセット（Gは残す） ---
     document.getElementById("resetCurrentBtn").addEventListener("click", () => {
       curCounts = {};
       initCountsIfNeeded();
       updateView();
     });
 
-    // 可変役名：直接編集（A方式）
-    function bindCustomNameInput(inputId, idx) {
-      const el = document.getElementById(inputId);
+    // --- 子役名：直接編集（6個） ---
+    function bindKoyakuNameInput(idx) {
+      const el = document.getElementById(`koyakuName${idx}`);
       el.addEventListener("input", () => {
         const v = el.value.trim();
-        customRoles[idx].label = v.length > 0 ? v : `役${idx + 4}`;
+        koyakuRoles[idx].label = v.length > 0 ? v : `役${idx + 1}`;
         updateView();
       });
     }
-    bindCustomNameInput("customName0", 0);
-    bindCustomNameInput("customName1", 1);
-    bindCustomNameInput("customName2", 2);
+    for (let i = 0; i < 6; i++) bindKoyakuNameInput(i);
 
-    // 保存 / 履歴
+    // --- 保存 / 履歴 ---
     document.getElementById("saveBtn").addEventListener("click", () => {
       initCountsIfNeeded();
-
-      const koyakuRoles = getAllKoyakuRoles();
-      const koyakuSummaries = koyakuRoles.map(r => `${r.label}:${curCounts[r.key]}`);
 
       const bb = curCounts.bb;
       const rb = curCounts.rb;
       const bonusTotal = bb + rb;
-
       const diffGames = getDiffGames();
+
+      const koyakuSummaries = koyakuRoles.map(r => `${r.label}:${curCounts[r.key]}`);
 
       const item = {
         id: crypto.randomUUID(),
@@ -432,7 +424,9 @@
         diffGames,
 
         counts: { ...curCounts },
-        customRoles: customRoles.map(r => ({ ...r })),
+
+        // 子役名も保存（ここが重要）
+        koyakuRoles: koyakuRoles.map(r => ({ ...r })),
 
         bonusTotal,
         bonusGassan: formatRate1OverX(bonusTotal, diffGames),
@@ -453,8 +447,16 @@
       updateView();
     });
 
-    // 起動時
+    // 起動時：入力欄→配列に反映してから起動
+    function syncNamesFromInputs() {
+      for (let i = 0; i < 6; i++) {
+        const v = document.getElementById(`koyakuName${i}`).value.trim();
+        koyakuRoles[i].label = v.length > 0 ? v : `役${i + 1}`;
+      }
+    }
+
     history = loadHistory();
+    syncNamesFromInputs();
     initCountsIfNeeded();
     updateView();
   </script>
